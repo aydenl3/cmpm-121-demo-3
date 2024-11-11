@@ -1,4 +1,3 @@
-// todo
 //Imports
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -71,7 +70,7 @@ class Board {
   private getCanonicalCell(cell: Cell): Cell {
     const { i, j } = cell;
     const key = [i, j].toString();
-    //how know where break is?
+
     // if cell doesnt exist, make a new one and add it to canonical cells
     if (!this.knownCells.get(key)) {
       const newcell: Cell = { i: i, j: j };
