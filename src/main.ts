@@ -10,6 +10,9 @@ const TILE_DEGREES = 1e-4;
 const NEIGHBORHOOD_SIZE = 8;
 const CACHE_SPAWN_PROBABILITY = 0.1;
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
+let geolocationId: number | null = null; // Track geolocation watch ID
+const playerPath: leaflet.LatLng[] = []; // Track the player's path
+let playerPathLine: leaflet.Polyline<leaflet.LatLng> | null = null; // Reference to the polyline
 
 // Create the map (element with id "map" is defined in index.html)
 const map = leaflet.map(document.getElementById("map")!, {
@@ -110,7 +113,7 @@ class Board {
   getCellBounds(cell: Cell): leaflet.LatLngBounds {
     const cellBounds = leaflet.latLngBounds([
       [cell.i, cell.j],
-      [cell.i + (1 * this.tileWidth), cell.j + (1 * this.tileWidth)],
+      [cell.i + 1 * this.tileWidth, cell.j + 1 * this.tileWidth],
     ]);
     return cellBounds;
   }
@@ -150,6 +153,7 @@ class Board {
     }
   }
 }
+
 const activeRectangles: leaflet.Rectangle[] = [];
 function drawCache(cache: Cache) {
   const bounds = userBoard.getCellBounds(cache.location);
@@ -167,16 +171,13 @@ function drawCache(cache: Cache) {
     for (const coin of cache.coins.values()) {
       const button = document.createElement("button");
       button.textContent = `Take coin: ${coin.name}`;
-      button.addEventListener(
-        "click",
-        () =>
-          handleTakeClick(
-            cache,
-            coin,
-            button,
-            popupDiv.querySelector<HTMLSpanElement>("#value")!,
-          ),
-      );
+      button.addEventListener("click", () =>
+        handleTakeClick(
+          cache,
+          coin,
+          button,
+          popupDiv.querySelector<HTMLSpanElement>("#value")!,
+        ));
       buttonsDiv.appendChild(button);
     }
 
@@ -218,7 +219,7 @@ function handleTakeClick(
     statusPanel.innerHTML = `${playerCoins} Coins accumulated: <br>`;
     for (const coinin of playerWallet) {
       statusPanel.innerHTML += coinin.name;
-      statusPanel.innerHTML += "<br>";
+      statusPanel.innerHTML += "| |";
     }
   }
 }
@@ -238,7 +239,7 @@ function handleDropClick(cache: Cache, valueSpan: HTMLSpanElement) {
     statusPanel.innerHTML = `${playerCoins} Coins accumulated: <br>`;
     for (const coinin of playerWallet) {
       statusPanel.innerHTML += coinin.name;
-      statusPanel.innerHTML += "<br>";
+      statusPanel.innerHTML += "| |";
     }
   }
 }
@@ -248,6 +249,8 @@ function initializeControlPanel() {
   const southButton = document.getElementById("south")!;
   const westButton = document.getElementById("west")!;
   const eastButton = document.getElementById("east")!;
+  const sensorButton = document.getElementById("sensor")!;
+  const resetButton = document.getElementById("reset")!;
 
   northButton.addEventListener("click", () => {
     navigate("north");
@@ -261,36 +264,69 @@ function initializeControlPanel() {
   eastButton.addEventListener("click", () => {
     navigate("east");
   });
+  sensorButton.addEventListener("click", toggleGeolocationTracking);
+  resetButton.addEventListener("click", reset);
+}
+
+function toggleGeolocationTracking() {
+  if (geolocationId !== null) {
+    navigator.geolocation.clearWatch(geolocationId);
+    geolocationId = null;
+    console.log("Geolocation tracking stopped.");
+  } else {
+    geolocationId = navigator.geolocation.watchPosition(
+      (position) => {
+        playerLocation.lat = position.coords.latitude;
+        playerLocation.lng = position.coords.longitude;
+        map.panTo(playerLocation);
+        playerMarker.setLatLng(playerLocation);
+        clearRectangles();
+        generateCaches();
+        playerPath.push(
+          leaflet.latLng(position.coords.latitude, position.coords.longitude),
+        );
+        updatePlayerPathLine();
+        console.log("Geolocation updated:", playerLocation);
+      },
+      (error) => {
+        console.error("Error getting geolocation:", error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000,
+      },
+    );
+    console.log("Geolocation tracking started.");
+  }
+}
+function updatePlayerPathLine() {
+  if (playerPathLine) {
+    playerPathLine.setLatLngs(playerPath);
+  } else {
+    playerPathLine = leaflet.polyline(playerPath, { color: "red" }).addTo(map);
+  }
 }
 
 function navigate(direction: string) {
   console.log(`Navigating ${direction}`);
   if (direction == "north") {
     playerLocation.lat += 0.0001;
-    map.panTo(playerLocation);
-    playerMarker.setLatLng(playerLocation);
-    clearRectangles();
-    generateCaches();
   } else if (direction == "south") {
     playerLocation.lat -= 0.0001;
-    map.panTo(playerLocation);
-    playerMarker.setLatLng(playerLocation);
-    clearRectangles();
-    generateCaches();
   } else if (direction == "west") {
     playerLocation.lng -= 0.0001;
-    map.panTo(playerLocation);
-    playerMarker.setLatLng(playerLocation);
-    clearRectangles();
-    generateCaches();
   } else if (direction == "east") {
     playerLocation.lng += 0.0001;
-    map.panTo(playerLocation);
-    playerMarker.setLatLng(playerLocation);
-    clearRectangles();
-    generateCaches();
   }
+  map.panTo(playerLocation);
+  playerMarker.setLatLng(playerLocation);
+  clearRectangles();
+  generateCaches();
+  playerPath.push(leaflet.latLng(playerLocation.lat, playerLocation.lng));
+  updatePlayerPathLine();
 }
+
 function clearRectangles() {
   activeRectangles.forEach((rect) => map.removeLayer(rect));
   activeRectangles.length = 0;
@@ -309,7 +345,6 @@ function generateCaches() {
         drawCache(maybe_cache);
       } else {
         if (luck([newcell.i, newcell.j].toString()) < CACHE_SPAWN_PROBABILITY) {
-          console.log(luck([newcell.i, newcell.j].toString()));
           const newCache = userBoard.newCache(newcell);
           drawCache(newCache);
         }
@@ -317,7 +352,29 @@ function generateCaches() {
     }
   }
 }
-
+function reset() {
+  const answer = prompt("Reset Game? (y/n)");
+  if (answer && answer == "y") {
+    console.log("Resetting Game");
+    playerLocation.lat = 36.98949379578401;
+    playerLocation.lng = -122.06277128548504;
+    map.panTo(playerLocation);
+    playerMarker.setLatLng(playerLocation);
+    userBoard.cacheData.clear();
+    userBoard.knownCaches.clear();
+    playerCoins = 0;
+    playerWallet.length = 0;
+    playerPath.length = 0;
+    updatePlayerPathLine();
+    clearRectangles();
+    generateCaches();
+    statusPanel.innerHTML = `${playerCoins} Coins accumulated: <br>`;
+    for (const coinin of playerWallet) {
+      statusPanel.innerHTML += coinin.name;
+      statusPanel.innerHTML += "| |";
+    }
+  }
+}
 const userBoard: Board = new Board(TILE_DEGREES, NEIGHBORHOOD_SIZE);
 const playerLocation = OAKES_CLASSROOM;
 let playerCoins: number = 0;
