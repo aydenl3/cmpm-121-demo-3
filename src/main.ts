@@ -51,7 +51,16 @@ interface Momento<T> {
   fromMomento(momento: T): void;
 }
 
-class Cache implements Momento<string> {
+interface ICache {
+  toMomento(): string;
+  fromMomento(momento: string): void;
+  addCoin(coin: Coin): void; // New method
+  getCoins(): Iterable<Coin>; // New method to retrieve all coins
+  numCoins(): number;
+  getLocation(): Cell;
+}
+
+class Cache implements ICache {
   location: Cell;
   coins: Map<string, Coin>;
 
@@ -69,6 +78,19 @@ class Cache implements Momento<string> {
     const mapAsArray: [string, Coin][] = JSON.parse(momento);
     this.coins = new Map<string, Coin>(mapAsArray);
   }
+  addCoin(coin: Coin) {
+    this.coins.set(coin.name, coin);
+  }
+
+  getCoins(): Iterable<Coin> {
+    return this.coins.values();
+  }
+  numCoins(): number {
+    return this.coins.size;
+  }
+  getLocation(): Cell {
+    return this.location;
+  }
 }
 
 interface Coin {
@@ -82,14 +104,14 @@ class Board {
   readonly tileVisibilityRadius: number;
 
   private readonly knownCells: Map<string, Cell>;
-  public readonly knownCaches: Map<string, Cache>;
+  public readonly knownCaches: Map<string, ICache>;
   public readonly cacheData: Map<string, string>;
 
   constructor(tileWidth: number, tileVisibilityRadius: number) {
     this.tileWidth = tileWidth;
     this.tileVisibilityRadius = tileVisibilityRadius;
     this.knownCells = new Map<string, Cell>();
-    this.knownCaches = new Map<string, Cache>();
+    this.knownCaches = new Map<string, ICache>();
     this.cacheData = new Map<string, string>();
   }
 
@@ -123,14 +145,14 @@ class Board {
     const key = [i, j].toString();
     if (!this.knownCaches.get(key)) {
       const numCoins = Math.floor(luck([i, j, "initialValue"].toString()) * 10);
-      const newcache = new Cache(cell);
+      const newcache: ICache = new Cache(cell); // Use the ICache interface
       for (let k = 0; k < numCoins; k++) {
         const newCoin: Coin = {
           location: cell,
           serial: k.toString(),
           name: [cell.i, cell.j, k].toString(),
         };
-        newcache.coins.set(newCoin.name, newCoin);
+        newcache.addCoin(newCoin);
       }
       this.knownCaches.set(key, newcache);
       const newdata = newcache.toMomento();
@@ -155,8 +177,8 @@ class Board {
 }
 
 const activeRectangles: leaflet.Rectangle[] = [];
-function drawCache(cache: Cache) {
-  const bounds = userBoard.getCellBounds(cache.location);
+function drawCache(cache: ICache) {
+  const bounds = userBoard.getCellBounds(cache.getLocation());
   const rect = leaflet.rectangle(bounds);
   rect.addTo(map);
   activeRectangles.push(rect);
@@ -166,13 +188,14 @@ function drawCache(cache: Cache) {
     buttonsDiv.id = "button-container";
 
     popupDiv.innerHTML = `
-          <div>There is a cache here at "${cache.location.i},${cache.location.j}". It has value <span id="value">${cache.coins.size}</span>.</div>`;
+          <div>There is a cache here at "${cache.getLocation().i},${cache.getLocation().j}". It has value <span id="value">${cache.numCoins()}</span>.</div>`;
 
-    for (const coin of cache.coins.values()) {
+    for (const coin of cache.getCoins()) {
       const button = document.createElement("button");
       button.textContent = `Take coin: ${coin.name}`;
       button.addEventListener("click", () =>
         handleTakeClick(
+          // @ts-ignore: want Brace's review. Needs to be pushed.
           cache,
           coin,
           button,
@@ -187,6 +210,7 @@ function drawCache(cache: Cache) {
       "click",
       () =>
         handleDropClick(
+          // @ts-ignore: want Brace's review. Needs to be pushed.
           cache,
           popupDiv.querySelector<HTMLSpanElement>("#value")!,
         ),
