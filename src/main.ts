@@ -56,6 +56,8 @@ interface ICache {
   fromMomento(momento: string): void;
   addCoin(coin: Coin): void; // New method
   getCoins(): Iterable<Coin>; // New method to retrieve all coins
+  findCoin(coin: Coin): Coin | void;
+  delCoin(coin: Coin): void;
   numCoins(): number;
   getLocation(): Cell;
 }
@@ -82,8 +84,15 @@ class Cache implements ICache {
     this.coins.set(coin.name, coin);
   }
 
+  delCoin(coin: Coin) {
+    this.coins.delete(coin.name);
+  }
+
   getCoins(): Iterable<Coin> {
     return this.coins.values();
+  }
+  findCoin(coin: Coin) {
+    return this.coins.get(coin.name);
   }
   numCoins(): number {
     return this.coins.size;
@@ -188,14 +197,13 @@ function drawCache(cache: ICache) {
     buttonsDiv.id = "button-container";
 
     popupDiv.innerHTML = `
-          <div>There is a cache here at "${cache.getLocation().i},${cache.getLocation().j}". It has value <span id="value">${cache.numCoins()}</span>.</div>`;
+          <div>There is a cache here at "${cache.getLocation().i},${cache.getLocation().j}". It has value <span id="value">${cache.numCoins().toString()}</span>.</div>`;
 
     for (const coin of cache.getCoins()) {
       const button = document.createElement("button");
       button.textContent = `Take coin: ${coin.name}`;
       button.addEventListener("click", () =>
         handleTakeClick(
-          // @ts-ignore: want Brace's review. Needs to be pushed.
           cache,
           coin,
           button,
@@ -210,7 +218,6 @@ function drawCache(cache: ICache) {
       "click",
       () =>
         handleDropClick(
-          // @ts-ignore: want Brace's review. Needs to be pushed.
           cache,
           popupDiv.querySelector<HTMLSpanElement>("#value")!,
         ),
@@ -222,24 +229,24 @@ function drawCache(cache: ICache) {
 }
 
 function handleTakeClick(
-  cache: Cache,
+  cache: ICache,
   coin: Coin,
   button: HTMLButtonElement,
   valueSpan: HTMLSpanElement,
 ) {
-  if (cache.coins.size > 0) {
-    const this_coin = cache.coins.get(coin.name);
+  if (cache.numCoins() > 0) {
+    const this_coin = cache.findCoin(coin);
     if (this_coin) {
-      cache.coins.delete(coin.name);
+      cache.delCoin(coin);
       userBoard.cacheData.set(
-        [cache.location.i, cache.location.j].toString(),
+        [cache.getLocation().i, cache.getLocation().j].toString(),
         cache.toMomento(),
       );
       playerWallet.push(this_coin);
       playerCoins++;
       button.textContent = `Took coin: ${coin.serial}`;
     }
-    valueSpan.innerHTML = cache.coins.size.toString();
+    valueSpan.innerHTML = cache.numCoins.toString();
     statusPanel.innerHTML = `${playerCoins} Coins accumulated: <br>`;
     for (const coinin of playerWallet) {
       statusPanel.innerHTML += coinin.name;
@@ -248,18 +255,18 @@ function handleTakeClick(
   }
 }
 
-function handleDropClick(cache: Cache, valueSpan: HTMLSpanElement) {
+function handleDropClick(cache: ICache, valueSpan: HTMLSpanElement) {
   if (playerCoins > 0) {
     const dropped_coin = playerWallet.pop();
     if (dropped_coin) {
-      cache.coins.set(dropped_coin.name, dropped_coin);
+      cache.addCoin(dropped_coin);
       userBoard.cacheData.set(
-        [cache.location.i, cache.location.j].toString(),
+        [cache.getLocation().i, cache.getLocation().j].toString(),
         cache.toMomento(),
       );
       playerCoins--;
     }
-    valueSpan.innerHTML = cache.coins.size.toString();
+    valueSpan.innerHTML = cache.numCoins().toString();
     statusPanel.innerHTML = `${playerCoins} Coins accumulated: <br>`;
     for (const coinin of playerWallet) {
       statusPanel.innerHTML += coinin.name;
